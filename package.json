@@ -1,6 +1,6 @@
 {
   "name": "@mintplex-labs/openai-assistant-swarm",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The easiest way to automatically delegate work to any assistant you create in OpenAi through one united interface and manager. Now you can delegate work to a swarm of assistant all specialized with specific tasks you define.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
