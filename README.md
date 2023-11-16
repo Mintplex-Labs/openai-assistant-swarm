@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://useanything.com"><img src="https://github.com/Mintplex-Labs/openai-assistant-swarm/blob/master/images/readme.png?raw=true" alt="OpenAI Assistant Swarm Manager banner"></a>
+  <img src="https://github.com/Mintplex-Labs/openai-assistant-swarm/blob/master/images/readme.png?raw=true" alt="OpenAI Assistant Swarm Manager banner">
 </p>
 
 <p align="center">
