@@ -54,6 +54,12 @@
     "@jridgewell/resolve-uri" "^3.0.3"
     "@jridgewell/sourcemap-codec" "^1.4.10"
 
+"@mintplex-labs/openai-assistant-swarm@file:":
+  version "0.1.1"
+  resolved "file:"
+  dependencies:
+    "@mintplex-labs/openai-assistant-swarm" "file:"
+
 "@nodelib/fs.scandir@2.1.5":
   version "2.1.5"
   resolved "https://registry.npmjs.org/@nodelib/fs.scandir/-/fs.scandir-2.1.5.tgz"
@@ -649,12 +655,6 @@ onetime@^5.1.2:
   integrity sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg==
   dependencies:
     mimic-fn "^2.1.0"
-
-"openai-assistant-swarm@file:":
-  version "1.0.0"
-  resolved "file:"
-  dependencies:
-    openai-assistant-swarm "file:"
 
 openai@^4.18.0:
   version "4.18.0"

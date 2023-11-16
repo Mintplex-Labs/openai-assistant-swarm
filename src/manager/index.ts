@@ -53,17 +53,17 @@ export default class SwarmManager {
 
     this.log = options?.debug
       ? (arg: any) => {
-        console.log(`\x1b[44mDBG: Assistant-Swarm\x1b[0m`, arg);
-      }
+          console.log(`\x1b[44mDBG: Assistant-Swarm\x1b[0m`, arg);
+        }
       : (_: any) => null;
     this.logGroup = options?.debug
       ? (title: string | null, end?: boolean) => {
-        if (end) {
-          console.groupEnd();
-          return;
+          if (end) {
+            console.groupEnd();
+            return;
+          }
+          console.group(title);
         }
-        console.group(title);
-      }
       : (_: any, __?: any) => null;
   }
 
@@ -210,7 +210,7 @@ export default class SwarmManager {
           let args: undefined | DelegationArguments;
           try {
             args = JSON.parse(call.function.arguments);
-          } catch { }
+          } catch {}
 
           return call.function.name === "delegate" && !!args?.agent_id;
         })
@@ -419,15 +419,16 @@ export default class SwarmManager {
     const run = await this.client.beta.threads.runs.create(thread.id, {
       assistant_id: mgrAssistant.id,
       tools: toolsFromAssistants(assistants),
-      instructions: `${mgrAssistant.instructions
-        } Your available assistants and their descriptions are presented between <assistant></assistant> tags with their id and descriptions. Only select assistants are explicitly listed here.
+      instructions: `${
+        mgrAssistant.instructions
+      } Your available assistants and their descriptions are presented between <assistant></assistant> tags with their id and descriptions. Only select assistants are explicitly listed here.
 ${assistants.map((assistant: Assistant) => {
-          return `<assistant>
+  return `<assistant>
 <id>${assistant.id}</id>
 <name>${assistant.name}</name>
 <description>${assistant.description ?? assistant.instructions}</description>
 </assistant>`;
-        })},`,
+})},`,
       ...(!!runOpts ? { ...runOpts } : {}),
     });
 
