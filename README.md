@@ -27,10 +27,18 @@ All of the mental overhead of managing which assistant does what is now handled 
 The Swarm Manager acts as an extension of the OpenAI NodeJS SDK - making available a new `.swarm` method available on `beta.assistants`.
 
 First, install the openai SDK for NodeJS
-`yarn add openai` or `npm install openai`
+```shell
+yarn add openai
+# or 
+npm install openai
+```
 
 Next install the `openai-assistant-swarm` package
-`yarn add @mintplex-labs/openai-assistant-swarm` or `npm install @mintplex-labs/openai-assistant-swarm`
+```shell
+yarn add @mintplex-labs/openai-assistant-swarm
+# or 
+npm install @mintplex-labs/openai-assistant-swarm
+```
 
 Now use the SDK as you normally would and run the extension function and initialize the agent swarm manager.
 ```javascript
