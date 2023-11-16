@@ -18,12 +18,12 @@
   </a>
 </p>
 
-### What is the Swarm Manager
+## What is the Swarm Manager
 OpenAI's assistant API unlocks an incredible convience for developers who are building autonomous AI assistants or commonly called "Agents". This Node JS Library unlocks your entire registry of custom agents and their functions via a single API call. One agent "manager" can now easily delegate work to one or many other assistants concurrently.
 
 All of the mental overhead of managing which assistant does what is now handled and wrapped up with a bow.
 
-### How does it work?
+## How does it work?
 The Swarm Manager acts as an extension of the OpenAI NodeJS SDK - making available a new `.swarm` method available on `beta.assistants`.
 
 First, install the openai SDK for NodeJS
@@ -66,9 +66,10 @@ await OpenAIClient.beta.assistants.swarm.init();
 // Now all swarm management function are available to you!
 ```
 
-### Available tools
+## Available tools
 
 **Delegation via prompt**
+
 First, the main one you are probably interested in - delegation to sub-assistants. Its easy to set up and
 also to listen to events and add into your current workflow.
 ```javascript
@@ -110,6 +111,7 @@ console.log({
 ```
 
 **Get all available assistants**
+
 Right now, you need to paginate assitants to see who is around to answer a question or handle a task. Now, you can just make one call and we handle pagination for you
 ```javascript
 const allAssistants = await OpenAIClient.beta.assistants.swarm.allAssistants();
@@ -118,6 +120,7 @@ console.log(`Found ${allAssistants.length} assistants for this OpenAI Account`);
 ```
 
 **Get many known assistants at once**
+
 You are limited to fetching one assistant at a time via the API. Now you can get many at once
 ```javascript
 const assistantIds = ['asst_customer_success', 'asst_lead_pirate_manager', 'asst_that_was_deleted' ]
