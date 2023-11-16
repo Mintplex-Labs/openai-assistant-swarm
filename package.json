@@ -1,0 +1,56 @@
+{
+  "name": "@mintplex-labs/openai-assistant-swarm",
+  "version": "0.1.0",
+  "description": "The easiest way to automatically delegate work to any assistant you create in OpenAi through one united interface and manager. Now you can delegate work to a swarm of assistant all specialized with specific tasks you define.",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "readme": "./README.md",
+  "bugs": {
+    "url": "https://github.com/Mintplex-Labs/openai-assistant-swarm/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mintplex-Labs/openai-assistant-swarm"
+  },
+  "files": [
+    "dist",
+    "src",
+    "examples"
+  ],
+  "scripts": {
+    "build": "yarn lint && tsup",
+    "lint": "yarn prettier --write ./src",
+    "dev:link": "npm link && cd examples && npm link openai-assistant-swarm && cd ..",
+    "dev:test": "rm -rf dist && yarn build && yarn dev:link && node examples/index.mjs"
+  },
+  "keywords": [
+    "openai",
+    "gpts",
+    "assistant",
+    "manager",
+    "assistant",
+    "manager",
+    "ai agents",
+    "ai swarm",
+    "openai assistants",
+    "ai agent",
+    "agent manager",
+    "gpt-3.5 agent",
+    "autogpt",
+    "autogen",
+    "mintplex labs inc",
+    "AGI",
+    "agi"
+  ],
+  "author": "Mintplex Labs Inc",
+  "license": "MIT",
+  "devDependencies": {
+    "dotenv": "^16.3.1",
+    "openai": "^4.18.0",
+    "prettier": "^3.1.0",
+    "ts-node": "^10.9.1",
+    "tsup": "^7.2.0",
+    "typescript": "^5.2.2"
+  }
+}
