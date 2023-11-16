@@ -15,6 +15,9 @@
   </a> |
    <a href="https://mintplexlabs.com" target="_blank">
     Mintplex Labs Inc
+  </a>|
+   <a href="https://www.npmjs.com/package/@mintplex-labs/openai-assistant-swarm" target="_blank">
+    NPM
   </a>
 </p>
 
