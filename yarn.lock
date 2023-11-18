@@ -55,7 +55,7 @@
     "@jridgewell/sourcemap-codec" "^1.4.10"
 
 "@mintplex-labs/openai-assistant-swarm@file:":
-  version "0.1.1"
+  version "0.1.2"
   resolved "file:"
   dependencies:
     "@mintplex-labs/openai-assistant-swarm" "file:"

@@ -1,7 +1,12 @@
 import { Assistant } from "openai/resources/beta/assistants/assistants";
-import { AssistantListResponse, MessageHistory } from "./types";
+import {
+  AssistantListResponse,
+  MessageHistory,
+  RunSubmitToolTempOutput,
+} from "./types";
 import SwarmManager from "../manager";
 import OpenAI from "openai";
+import { RunSubmitToolOutputsParams } from "openai/resources/beta/threads/runs/runs";
 
 export const DEFAULT_OPTS = {
   debug: false,
@@ -23,21 +28,30 @@ export function toolsFromAssistants(
       function: {
         name: "delegate",
         description:
-          "Assigns a given descriptive prompt to an autonomous assistant that will then go and execute the job and return a response based on the task given.",
+          "Delegates tasks with descriptive prompt to an autonomous assistant that will then go and execute the assignment based on the information provided.",
         parameters: {
           type: "object",
           properties: {
-            prompt: {
-              type: "string",
+            instructions: {
+              type: "array",
               description:
-                "Descriptive definition of task that the assistant should use to help complete the main task. This prompt is tailored to the description and role of the assistant",
-            },
-            agent_id: {
-              type: "string",
-              enum: [...assistants.map((a) => a.id), "<none>"],
+                "The information that will enable an assistant go an execute a provided task.",
+              items: {
+                type: "object",
+                properties: {
+                  prompt: {
+                    type: "string",
+                  },
+                  agent_id: {
+                    type: "array",
+                    description: "The list agent_id who will work",
+                    enum: [...assistants.map((a) => a.id), "<none>"],
+                  },
+                },
+              },
             },
           },
-          required: ["prompt", "agent_id"],
+          required: ["instructions"],
         },
       },
     },
@@ -197,8 +211,13 @@ export async function pollRun(
 }
 
 /**
- * Get the last text message from a thread that was sent by either the user or the assistant.
+ * Get the first assistant text message from a thread that was sent.
  * You should only run this once you know the thread is in a settled state.
+ * Why is it in ascending order and get the first assistant message?
+ *
+ * -> Sometimes on worse models (3.5t) the assistant will respond to itself for no reason and chat with itself until it tires out
+ * when this happens the first response is 100% perfect, but the next one will be as if the thread failed to delegate.
+ *
  */
 export async function runMessage(
   client: SwarmManager["client"],
@@ -207,9 +226,14 @@ export async function runMessage(
 ): Promise<string> {
   try {
     const lastMessageText = client.beta.threads.messages
-      .list(runItem.thread_id, { limit: 1, order: "desc" })
-      .then(({ data }) => data[0])
-      .then((msg) => msg.content.find((content) => content.type === "text"))
+      .list(runItem.thread_id, { limit: 10, order: "asc" })
+      .then(({ data }) => data.find((msg) => msg.role === "assistant"))
+      .then((firstAssistantMsg) => {
+        if (!firstAssistantMsg) throw new Error("Assistant never responded.");
+        return firstAssistantMsg.content.find(
+          (content) => content.type === "text",
+        );
+      })
       .then((textContent) => {
         return (textContent as OpenAI.Beta.Threads.Messages.MessageContentText)
           ?.text?.value;
@@ -223,4 +247,37 @@ export async function runMessage(
     logger(e.message);
     return "Failed to get a written response from the thread.";
   }
+}
+
+/**
+ * When parallel function calling is done we can have the same results being created
+ * for the same tool_call - so here we compress all results related to a single tool_call_id
+ */
+export function deDupeToolOutputs(
+  toolOutputs: RunSubmitToolTempOutput[],
+): RunSubmitToolOutputsParams.ToolOutput[] {
+  const compressed: RunSubmitToolTempOutput[] = [];
+  const uniqueCallIds = new Set();
+
+  for (const output of toolOutputs) {
+    if (uniqueCallIds.has(output.tool_call_id)) {
+      const existing = compressed.find((call) => call.tool_call_id) as
+        | RunSubmitToolTempOutput
+        | undefined;
+      if (!existing) continue;
+
+      existing.output = [...existing.output, output.output].flat();
+      continue;
+    }
+
+    compressed.push(output);
+    uniqueCallIds.add(output.tool_call_id);
+  }
+
+  return compressed.map((res) => {
+    return {
+      tool_call_id: res.tool_call_id,
+      output: JSON.stringify(res.output),
+    };
+  });
 }

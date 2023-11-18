@@ -8,36 +8,40 @@ import {
 } from "openai/resources/beta/threads/runs/runs";
 import {
   ManagerOptions,
-  DelegationArguments,
   DelegatedToolCall,
   DelegationResponse,
-  MessageHistory,
   DelegateRun,
   EventTypes,
   ParentResponseEvent,
   SubRunResponseEvent,
+  PollEvent,
+  RunSubmitToolTempOutput,
 } from "../utils/types";
 import {
   DEFAULT_OPTS,
   _allAssistants,
   _getAssistants,
+  deDupeToolOutputs,
   messageHistoryForThread,
   pollRun,
   runMessage,
   toolsFromAssistants,
 } from "../utils";
+import SwarmAssistant from "./child";
+import { compressToolCalls } from "../utils/toolCalls";
 
 export default class SwarmManager {
   public emitter: EventEmitter;
+  public client: OpenAI;
+  public knownAssistantIds?: string[];
+  public assistants: OpenAI["beta"]["assistants"];
+  public log: (_: any) => void;
+  public logGroup: (_: any, __?: any) => void;
+
   private ready: boolean;
   private _mgrBotName: string;
   private mgrAssistant?: Assistant;
-  private client: OpenAI;
-  private assistants: OpenAI["beta"]["assistants"];
   private options: ManagerOptions;
-  private knownAssistantIds?: string[];
-  private log: (_: any) => void;
-  private logGroup: (_: any, __?: any) => void;
 
   constructor(client: OpenAI, options?: ManagerOptions) {
     this.emitter = new EventEmitter();
@@ -65,18 +69,6 @@ export default class SwarmManager {
           console.group(title);
         }
       : (_: any, __?: any) => null;
-  }
-
-  private emitEvent(
-    event: EventTypes,
-    args: ParentResponseEvent | SubRunResponseEvent,
-  ) {
-    this.emitter.emit(event, args);
-  }
-
-  private playgroundLink(run?: Run | null): string | null {
-    if (!run) return null;
-    return `https://platform.openai.com/playground?assistant=${run.assistant_id}&mode=assistant&thread=${run.thread_id}`;
   }
 
   private isReady(): boolean {
@@ -121,78 +113,33 @@ export default class SwarmManager {
     return !!newAssistant;
   }
 
-  private async runSubDelegation(
-    parentRun: Run,
-    toolCall: DelegatedToolCall,
-    messageHistory: MessageHistory[],
-  ): Promise<DelegateRun> {
-    const thread = await this.client.beta.threads.create({
-      messages: [
-        ...messageHistory,
-        { role: "user", content: toolCall.args.prompt },
-      ],
-      metadata: {
-        delegatedBy: parentRun.assistant_id,
-        viaFunc: toolCall.function,
-        toAssistant: toolCall.agentId,
-        originatingToolCallId: toolCall.id,
-        createdBy: "@mintplex-labs/openai-assistant-swarm",
-      },
-    });
-    if (!thread) throw new Error("Failed to create thread for sub task.");
-    if (!this.knownAssistantIds?.includes(toolCall.agentId))
-      throw new Error(
-        `Assistant ${toolCall.agentId} is not a known assistant! Must have been hallucinated.`,
-      );
-    const assistant = (
-      await _getAssistants(this.assistants, this.log, [toolCall.agentId])
-    )?.[0];
-    const run = await this.client.beta.threads.runs.create(thread.id, {
-      assistant_id: assistant.id,
-    });
-    if (!run)
-      throw new Error(
-        `Failed to create run for thread of sub task for assistant ${toolCall.agentId}.`,
-      );
-
-    // Will get us to either completed, none, or action required. In which case now the user needs to
-    // run that action to whatever it is tied to in their codebase.
-    this.log(`Running sub-child task for ${assistant.id} (${assistant.name})`);
-    this.log({ childThreadPlaygroundLink: this.playgroundLink(run) });
-    const settledRun = await pollRun(this.client, this.logGroup, this.log, run);
-
-    return {
-      abortReason: null,
-      textResponse:
-        settledRun.status === "completed"
-          ? await runMessage(this.client, this.log, settledRun)
-          : null,
-      parentToolCallId: toolCall.id,
-      status: "success",
-      run: settledRun,
-      playground: this.playgroundLink(settledRun),
-      assistant,
-      parentRun,
-      thread,
-    };
-  }
-
-  private async delegateTask(primaryRun: Run): Promise<{
-    concludedPrimaryRun: ParentResponseEvent["parentRun"];
+  private async delegateTaskToChildren(primaryRun: Run): Promise<{
+    concludedPrimaryRun: ParentResponseEvent["data"]["parentRun"];
     subRuns: DelegateRun[];
   }> {
     // If primary run does not require any action at all - return the primary run.
     if (primaryRun.status !== "requires_action") {
       const textResponse = await runMessage(this.client, this.log, primaryRun);
 
-      this.emitEvent("parent_assistant_complete", {
-        parentRun: {
-          ...primaryRun,
-          playground: this.playgroundLink(primaryRun),
+      this.emitEvent("poll_event", {
+        data: {
+          status: "parent_run_concluded",
           textResponse,
+          playground: this.playgroundLink(primaryRun),
+          run: primaryRun,
         },
       });
-      this.emitEvent("child_assistants_complete", { subRuns: [] });
+      this.emitEvent("parent_assistant_complete", {
+        data: {
+          parentRun: {
+            ...primaryRun,
+            playground: this.playgroundLink(primaryRun),
+            textResponse,
+          },
+        },
+      });
+      this.emitEvent("child_assistants_complete", { data: { subRuns: [] } });
+      this.emitEvent("poll_event", { data: { status: "DONE" } });
 
       return {
         concludedPrimaryRun: {
@@ -204,43 +151,27 @@ export default class SwarmManager {
       };
     }
 
-    const toolCalls: DelegatedToolCall[] =
-      primaryRun.required_action?.submit_tool_outputs?.tool_calls
-        ?.filter((call) => {
-          let args: undefined | DelegationArguments;
-          try {
-            args = JSON.parse(call.function.arguments);
-          } catch {}
-
-          return call.function.name === "delegate" && !!args?.agent_id;
-        })
-        ?.map((call) => {
-          const args = JSON.parse(call.function.arguments);
-          return {
-            id: call.id,
-            function: call.function.name,
-            agentId: args.agent_id,
-            args,
-          };
-        }) || [];
-
+    const toolCalls: DelegatedToolCall[] = compressToolCalls(this, primaryRun);
     const uniqueAgents = new Set();
-    const toolOutputs: RunSubmitToolOutputsParams.ToolOutput[] = [];
-    const subRunRequests: Promise<DelegateRun>[] = [];
+    const toolOutputs: RunSubmitToolTempOutput[] = [];
+    const subRunRequests: (() => Promise<DelegateRun>)[] = [];
     const messageHistory = await messageHistoryForThread(
       this.client,
       this.log,
       primaryRun.thread_id,
     );
+
     for (const toolCall of toolCalls) {
       if (toolCall.agentId === "<none>") {
         toolOutputs.push({
           tool_call_id: toolCall.id,
-          output: JSON.stringify({
-            originatingToolCallId: toolCall.id,
-            delegatedTo: "nobody",
-            viaFunc: toolCall.function,
-          }),
+          output: [
+            {
+              originatingToolCallId: toolCall.id,
+              delegatedTo: "nobody",
+              viaFunc: toolCall.function,
+            },
+          ],
         });
         continue;
       }
@@ -248,17 +179,21 @@ export default class SwarmManager {
       uniqueAgents.add(toolCall.agentId);
       toolOutputs.push({
         tool_call_id: toolCall.id,
-        output: JSON.stringify({
-          originatingToolCallId: toolCall.id,
-          delegatedTo: toolCall.agentId,
-          viaFunc: toolCall.function,
-        }),
+        output: [
+          {
+            originatingToolCallId: toolCall.id,
+            delegatedTo: toolCall.agentId,
+            viaFunc: toolCall.function,
+          },
+        ],
       });
 
-      subRunRequests.push(
-        new Promise(async (resolve) => {
+      subRunRequests.push(() => {
+        return new Promise(async (resolve) => {
           try {
-            await this.runSubDelegation(primaryRun, toolCall, messageHistory)
+            const swarmAssistant = new SwarmAssistant(this);
+            await swarmAssistant
+              .runDelegatedTask(primaryRun, toolCall, messageHistory)
               .then((runInfo) => {
                 resolve(runInfo as DelegateRun);
               })
@@ -290,20 +225,24 @@ export default class SwarmManager {
               run: null,
             } as DelegateRun);
           }
-        }),
-      );
+        });
+      });
     }
 
-    const subRunsPromise: any = () => {
+    const subRunsPromise: any = (): Promise<DelegateRun[]> => {
       return new Promise(async (resolve) => {
-        // Fan out the child processes and wait for them to return some type of response.
         this.log(
           `Fanning out ${subRunRequests.length} tool executions for ${uniqueAgents.size} agents across swarm.`,
         );
-        await Promise.all(subRunRequests.flat()).then((results) => {
-          this.emitEvent("child_assistants_complete", { subRuns: results });
-          resolve(results);
-        });
+
+        await Promise.all(subRunRequests.flat().map((fn) => fn())).then(
+          (results) => {
+            this.emitEvent("child_assistants_complete", {
+              data: { subRuns: results },
+            });
+            resolve(results);
+          },
+        );
       });
     };
 
@@ -314,7 +253,7 @@ export default class SwarmManager {
             primaryRun.thread_id,
             primaryRun.id,
             {
-              tool_outputs: toolOutputs,
+              tool_outputs: deDupeToolOutputs(toolOutputs),
             },
           );
         const concludedPrimaryRun = await pollRun(
@@ -329,11 +268,21 @@ export default class SwarmManager {
           concludedPrimaryRun,
         );
 
-        this.emitEvent("parent_assistant_complete", {
-          parentRun: {
-            ...concludedPrimaryRun,
+        this.emitEvent("poll_event", {
+          data: {
+            status: "parent_assistant_complete",
             playground: this.playgroundLink(concludedPrimaryRun),
             textResponse,
+            run: concludedPrimaryRun,
+          },
+        });
+        this.emitEvent("parent_assistant_complete", {
+          data: {
+            parentRun: {
+              ...concludedPrimaryRun,
+              playground: this.playgroundLink(concludedPrimaryRun),
+              textResponse,
+            },
           },
         });
 
@@ -397,6 +346,24 @@ export default class SwarmManager {
   }
 
   /**
+   * Emit informative event from the swarm process running.
+   */
+  emitEvent(
+    event: EventTypes,
+    args: ParentResponseEvent | SubRunResponseEvent | PollEvent,
+  ) {
+    this.emitter.emit(event, args);
+  }
+
+  /**
+   * Generate the Playground link for an assistant and thread for visualization in the browser.
+   */
+  playgroundLink(run?: Run | null): string | null {
+    if (!run) return null;
+    return `https://platform.openai.com/playground?assistant=${run.assistant_id}&mode=assistant&thread=${run.thread_id}`;
+  }
+
+  /**
    * Given a single prompt we will create a thread and then find the best option
    * for assistant execution to complete or fulfill the task.
    */
@@ -416,15 +383,20 @@ export default class SwarmManager {
 
     const mgrAssistant = this.mgrAssistant as Assistant;
     const assistants = await this.getAssistants(assistantIds);
+
+    // If the user defined a sub-set of assistants we want to reduce scope of known assistants
+    // so we don't execute tasks outside of the subset.
+    this.knownAssistantIds = assistants.map((a) => a.id);
+
     const run = await this.client.beta.threads.runs.create(thread.id, {
       assistant_id: mgrAssistant.id,
       tools: toolsFromAssistants(assistants),
       instructions: `${
         mgrAssistant.instructions
-      } Your available assistants and their descriptions are presented between <assistant></assistant> tags with their id and descriptions. Only select assistants are explicitly listed here.
+      } Your available assistants and their descriptions are presented between <assistant></assistant> tags with their id and descriptions. Only select assistants that are explicitly listed here.
 ${assistants.map((assistant: Assistant) => {
   return `<assistant>
-<id>${assistant.id}</id>
+<agent_id>${assistant.id}</agent_id>
 <name>${assistant.name}</name>
 <description>${assistant.description ?? assistant.instructions}</description>
 </assistant>`;
@@ -434,6 +406,15 @@ ${assistants.map((assistant: Assistant) => {
 
     this.log(`Run created: ${run.id}`);
     this.log({ parentThreadPlaygroundLink: this.playgroundLink(run) });
+    this.emitEvent("poll_event", {
+      data: {
+        status: "parent_run_created",
+        prompt,
+        playground: this.playgroundLink(run),
+        run,
+      },
+    });
+
     const settledManagerRun = await pollRun(
       this.client,
       this.logGroup,
@@ -441,19 +422,6 @@ ${assistants.map((assistant: Assistant) => {
       run,
     );
 
-    return await this.delegateTask(settledManagerRun);
+    return await this.delegateTaskToChildren(settledManagerRun);
   }
-
-  /**
-   * Given a message history we will create a thread and then find the best option
-   * for assistant execution to complete or fulfill the task.
-   */
-  // async delegateWithMessages(
-  //   messages: MessageHistory[],
-  //   assistantIds: string[] | '<any>' = '<any>',
-  //   runOpts?: RunCreateParams
-  // ) {
-  //   throw new Error('Not implemented.');
-  //   return;
-  // }
 }

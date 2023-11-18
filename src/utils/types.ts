@@ -5,7 +5,8 @@ export type EventTypes =
   | "debug"
   | "child_assistants_complete"
   | "parent_assistant_complete"
-  | "parent_text_response";
+  | "parent_text_response"
+  | "poll_event";
 
 export type AssistantListResponse = {
   data: Assistant[];
@@ -21,6 +22,24 @@ export type ManagerOptions = {
   };
 };
 
+export type ToolUse = {
+  recipient_name: string;
+  parameters: {
+    instructions: DelegationArguments[];
+  };
+};
+
+export type ToolOutputObject = {
+  originatingToolCallId: string;
+  delegatedTo: string;
+  viaFunc: string;
+};
+
+export type RunSubmitToolTempOutput = {
+  output: ToolOutputObject[];
+  tool_call_id?: string;
+};
+
 export type DelegationArguments = {
   prompt: string;
   agent_id: string | "<none>";
@@ -34,7 +53,7 @@ export type DelegatedToolCall = {
 };
 
 export type DelegationResponse = {
-  concludedPrimaryRun: ParentResponseEvent["parentRun"];
+  concludedPrimaryRun: ParentResponseEvent["data"]["parentRun"];
   subRuns: DelegateRun[];
 };
 
@@ -56,12 +75,20 @@ export type DelegateRun = {
 };
 
 export type ParentResponseEvent = {
-  parentRun: OpenAI.Beta.Threads.Run & {
-    playground: string | null;
-    textResponse: string | null;
+  data: {
+    parentRun: OpenAI.Beta.Threads.Run & {
+      playground: string | null;
+      textResponse: string | null;
+    };
   };
 };
 
 export type SubRunResponseEvent = {
-  subRuns: DelegateRun[];
+  data: {
+    subRuns: DelegateRun[];
+  };
+};
+
+export type PollEvent = {
+  data: object;
 };

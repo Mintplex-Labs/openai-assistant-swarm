@@ -22,7 +22,7 @@
 </p>
 
 ## What is the Swarm Manager
-OpenAI's assistant API unlocks an incredible convience for developers who are building autonomous AI assistants or commonly called "Agents". This Node JS Library unlocks your entire registry of custom agents and their functions via a single API call. One agent "manager" can now easily delegate work to one or many other assistants concurrently.
+OpenAI's assistant API unlocks an incredible convience for developers who are building autonomous AI assistants or commonly called "Agents". This Node JS Library unlocks your entire registry of custom agents and their functions via a single API call. One agent "manager" can now easily delegate work to one or many other assistants in parallel in a smart and quick way so you can handle actions from delegated tasks easily.
 
 All of the mental overhead of managing which assistant does what is now handled and wrapped up with a bow.
 
@@ -58,7 +58,7 @@ EnableSwarmAbilities(OpenAIClient, {
   debug: false, // to see console log outputs of the process and playground links for debugging.
   managerAssistantOptions: {
          name: "[AUTOMATED] ___Swarm Manager", // Name of created/maintained agent by the library
-        model: "gpt-3.5-turbo", // Use gpt-4 for better reasoning and calling.
+        model: "gpt-4", // Use gpt-4 for better reasoning and calling.
         instructions: 'Instructions you are going to give the agent manager to delegate tasks to'; // Override the default instructions.
     };
 });
@@ -67,6 +67,37 @@ EnableSwarmAbilities(OpenAIClient, {
 // your account. Swarm manager can be configured via options on `EnableSwarmAbilities`
 await OpenAIClient.beta.assistants.swarm.init();
 // Now all swarm management function are available to you!
+```
+
+## A simple example
+
+An full example delegating a single input between 3 available assistants...
+```javascript
+import OpenAI from 'openai';
+import { EnableSwarmAbilities } from '@mintplex-labs/openai-assistant-swarm';
+const OpenAIClient = new OpenAI({apiKey: process.env.OPEN_AI_KEY});
+EnableSwarmAbilities(OpenAIClient);
+await OpenAIClient.beta.assistants.swarm.init();
+
+// Optional - set up listeners here to wait for specific events to return to the user since streaming is not available yet.
+
+// Run the main process on a single text prompt to have work delegate between all of your assistants that are available.
+const response = OpenAIClient.beta.assistants.swarm.delegateWithPrompt('What is the weather in New York city right now? Also what is the top stock for today?');
+// For example. Given a Pirate bot, Weather Bot, and Stock Bot in your assistant registry on OpenAI.
+// Run the below threads in parallel and return to you!
+// |--> Will delegate to an existing Weather Bot
+// |--> Will delegate to an existing Stock watcher Bot
+// -> Pirate bot will not be invoked.
+// -----
+// The parent will respond with something like "I've arranged for two of our assistants to handle your requests. For assistance with stocks I have delegated that task  to the Stock Bot, and for the weather update in San Francisco, our Weatherbot will provide the current conditions. They will take care of your needs shortly."
+//
+// You will then get a response once each child responds with either a completion or a `required_action` run you can handle in your codebase easily.
+
+console.log({
+  parentRun: response.parentRun, // All information about the parent thread
+  subRuns: response.subRuns, // array of runs created and their status for each spun-out child thread!
+})
+
 ```
 
 ## Available tools
@@ -97,6 +128,20 @@ OpenAIClient.beta.assistants.swarm.emitter.on('child_assistants_complete', (args
     console.log(args.subRuns.map((run) => run.textResponse)) // => Yarrh! I am the captain of this vessel. Ye be after my treasure, Yar?
     console.log(args.subRuns.map((run) => run.playground)) // => https://platform.openai.com/playground.... to debug thread & run in browser.
     // args.subRuns[x].run => The full Run object from OpenAI so you can get the thread_id and other properties like status.
+    console.log('\n\n')
+    console.groupEnd();
+});
+
+// Set up and event listener to see every step event as it is completed:
+OpenAIClient.beta.assistants.swarm.emitter.on('poll_event', ({ data }) => {
+    console.group('Poll event!');
+    console.log({
+        status: data.status,
+        text: data.prompt || data.textResponse,
+        runId: data?.run?.id,
+        link: data.playground,
+        runStatus: data?.run?.status,
+    })
     console.log('\n\n')
     console.groupEnd();
 });

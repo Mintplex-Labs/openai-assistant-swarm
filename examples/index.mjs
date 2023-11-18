@@ -13,7 +13,7 @@ const OpenAIClient = (
 EnableSwarmAbilities(OpenAIClient, {
     debug: true,
     managerAssistantOptions: {
-        model: 'gpt-4'
+        model: 'gpt-4-1106-preview'
     }
 });
 
@@ -35,26 +35,48 @@ await OpenAIClient.beta.assistants.swarm.init();
 
 // Set up an event listener for when the parent response is completed so you don't have to wait
 // for parent + children responses to all complete.
-OpenAIClient.beta.assistants.swarm.emitter.on('parent_assistant_complete', (args) => {
-    console.group('Parent assistant response completed');
-    console.log(args.parentRun.playground)
-    console.log(args.parentRun.textResponse)
-    console.log('\n\n')
-    console.groupEnd();
-});
+// OpenAIClient.beta.assistants.swarm.emitter.on('parent_assistant_complete', ({ data }) => {
+//     console.group('Parent assistant response completed');
+//     console.log(data.parentRun.playground)
+//     console.log(data.parentRun.textResponse)
+//     console.log('\n\n')
+//     console.groupEnd();
+// });
 
 // Set up an event listener for when the delegated assistant responses are completed so you don't have to wait
 // for parent + children responses to all complete.
-OpenAIClient.beta.assistants.swarm.emitter.on('child_assistants_complete', (args) => {
-    console.group('Child assistant response completed');
-    console.log(args.subRuns.map((run) => run.textResponse))
-    console.log(args.subRuns.map((run) => run.playground))
+// OpenAIClient.beta.assistants.swarm.emitter.on('child_assistants_complete', ({ data }) => {
+//     console.group('Child assistant response completed');
+//     console.log(data.subRuns.map((run) => run.textResponse)[0])
+//     console.log(data.subRuns.map((run) => run.playground)[0])
+//     console.log('\n\n')
+//     console.groupEnd();
+// });
+
+OpenAIClient.beta.assistants.swarm.emitter.on('poll_event', ({ data }) => {
+    console.group('Generic status event - see types for what is available');
+    console.log({
+        status: data.status,
+        text: data.prompt || data.textResponse,
+        runId: data?.run?.id,
+        link: data.playground,
+        runStatus: data?.run?.status,
+    })
     console.log('\n\n')
     console.groupEnd();
 });
 
 // Run the main process on a single text prompt to have work delegate between all of your assistants that are available.
-OpenAIClient.beta.assistants.swarm.delegateWithPrompt('I want to close my account for rambat1010@gmail.com. I am unhappy with this service.');
+OpenAIClient.beta.assistants.swarm.delegateWithPrompt('What is the weather in New York city right now? Also what is the top stock for today?');
+// For example. Given a Pirate bot, Weather Bot, and Stock Bot
+// Run threads in parallel and return to you!
+// |--> Will delegate to an existing Weather Bot
+// |--> Will delegate to an existing Stock watcher Bot
+// -> Pirate bot will not be invoked.
+// If a task is found that no assistant can handled it will be filtered out automatically. It also filters out hallucinated assistants.
+// -----
+// The parent will respond with something like "I've arranged for two of our assistants to handle your requests. For assistance with stocks I have delegated that task  to the Stock Bot, and for the weather update in San Francisco, our Weatherbot will provide the current conditions. They will take care of your needs shortly."
+// You will then get a response once each child responds with either a completion or a `required_action` run state you can handle in code to conclude.
 
 // Or focus the task on a subset of assistants that you know you want to handle delegated work.
-// OpenAIClient.beta.assistants.swarm.delegateWithPrompt('Let me speak to the head pirate of this vessel! What say ye??', ['asst_primary']);
+// OpenAIClient.beta.assistants.swarm.delegateWithPrompt('Let me speak to the head pirate of this vessel! What say ye??', ['asst_pirate']);
